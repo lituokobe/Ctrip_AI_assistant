@@ -132,7 +132,7 @@ def update_ticket_to_new_flight(
     conn = connect(db)
     cursor = conn.cursor()
 
-    # 查询新航班的信息
+    # check flight information
     cursor.execute(
         "SELECT departure_airport, arrival_airport, scheduled_departure FROM flights WHERE flight_id = ?",
         (new_flight_id,),

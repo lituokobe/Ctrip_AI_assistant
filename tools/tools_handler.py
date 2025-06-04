@@ -32,7 +32,6 @@ def create_tool_node_with_fallback(tools: list) -> dict:
 
    Parameters:
         tools (list)
-
     Returns:
         dict: tool node with fallback
     """

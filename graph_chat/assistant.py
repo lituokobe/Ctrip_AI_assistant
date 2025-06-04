@@ -1,11 +1,12 @@
 import os
 from datetime import datetime
 
-from langchain_openai import ChatOpenAI
-from langchain_community.tools import TavilySearchResults
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import Runnable, RunnableConfig
 
+from Ctrip_AI_assistant.graph_chat.base_data_model import ToFlightBookingAssistant, ToBookCarRental, \
+    ToHotelBookingAssistant, ToBookExcursion
+from Ctrip_AI_assistant.graph_chat.llm_tavily import tavily_tool, llm
 from Ctrip_AI_assistant.graph_chat.state import State
 from Ctrip_AI_assistant.tools.car_tools import book_car_rental, update_car_rental, cancel_car_rental, search_car_rentals
 from Ctrip_AI_assistant.tools.flights_tools import update_ticket_to_new_flight, cancel_ticket, \
@@ -25,7 +26,7 @@ class CtripAssistant:
     def __init__(self, runnable: Runnable):
         """
         initialize assistant's instance
-        :param runnable: runnable object, usually is a RUnnable
+        :param runnable: runnable object, usually is a Runnable
         """
         self.runnable = runnable
 
@@ -57,83 +58,91 @@ class CtripAssistant:
         return {'messages': result}
 
 #initialize tools
-tavily_tool = TavilySearchResults(max_results=1) #define the search tool
-part_1_tools = [
-    update_ticket_to_new_flight,
-    cancel_ticket,
-    book_car_rental,
-    update_car_rental,
-    cancel_car_rental,
-    book_hotel,
-    update_hotel,
-    cancel_hotel,
-    book_excursion,
-    update_excursion,
-    cancel_excursion,
-    tavily_tool,
-    fetch_user_flight_information,
-    search_flights,
-    lookup_policy,
-    search_car_rentals,
-    search_hotels,
-    search_trip_recommendations,
-]
+# part_1_tools = [
+#     update_ticket_to_new_flight,
+#     cancel_ticket,
+#     book_car_rental,
+#     update_car_rental,
+#     cancel_car_rental,
+#     book_hotel,
+#     update_hotel,
+#     cancel_hotel,
+#     book_excursion,
+#     update_excursion,
+#     cancel_excursion,
+#     tavily_tool,
+#     fetch_user_flight_information,
+#     search_flights,
+#     lookup_policy,
+#     search_car_rentals,
+#     search_hotels,
+#     search_trip_recommendations,
+# ]
+#
+# safe_tools = [
+#     tavily_tool,
+#     fetch_user_flight_information,
+#     search_flights,
+#     lookup_policy,
+#     search_car_rentals,
+#     search_hotels,
+#     search_trip_recommendations,
+# ]
+#
+# sensitive_tools = [
+#     update_ticket_to_new_flight,
+#     cancel_ticket,
+#     book_car_rental,
+#     update_car_rental,
+#     cancel_car_rental,
+#     book_hotel,
+#     update_hotel,
+#     cancel_hotel,
+#     book_excursion,
+#     update_excursion,
+#     cancel_excursion,
+# ]
+#
+# sensitive_tool_names = { t.name for t in sensitive_tools}
 
-safe_tools = [
-    tavily_tool,
-    fetch_user_flight_information,
-    search_flights,
-    lookup_policy,
-    search_car_rentals,
-    search_hotels,
-    search_trip_recommendations,
-]
+# def create_assistant_node() -> CtripAssistant:
+#     """
+#     create assistant node
+#     :return: assistant node
+#     """
+# )
 
-sensitive_tools = [
-    update_ticket_to_new_flight,
-    cancel_ticket,
-    book_car_rental,
-    update_car_rental,
-    cancel_car_rental,
-    book_hotel,
-    update_hotel,
-    cancel_hotel,
-    book_excursion,
-    update_excursion,
-    cancel_excursion,
-]
+primary_assistant_prompt = ChatPromptTemplate.from_messages(
+    [
+        (
+            "system",
+            "You are a customer service assistant for Ctrip travel agency."
+            "Your primary responsibility is to search for flight information and company policies to answer customer inquiries."
+            "If a customer requests to update or cancel a flight, book a rental car, book a hotel, or get travel recommendations, delegate the task to the appropriate specialized assistant by invoking the corresponding tool. You cannot make these types of changes yourself."
+            "Only specialized assistants have the authority to perform these actions for the user."
+            "Users are unaware of the existence of different specialized assistants, so do not mention them; simply delegate the task quietly via function calls."
+            "Provide detailed information to customers and always review the database before confirming that the information is unavailable."
+            "Be persistent when searching. If the first search yields no results, expand the query."
+            "If the search is unsuccessful, broaden the search scope before giving up."
+            "\n\nCurrent passenger has following flight information:\n<Flights>\n{user_info}\n</Flights>"
+            "\nCurrent time: {time}.",
+        ),
+        ("placeholder", "{messages}"),
+    ]
+).partial(time = datetime.now())
 
-sensitive_tool_names = { t.name for t in sensitive_tools}
+primary_assistant_tools = [tavily_tool, search_flights, lookup_policy]
 
-def create_assistant_node() -> CtripAssistant:
-    """
-    create assistant node
-    :return: assistant node
-    """
-    llm = ChatOpenAI(
-        model='gpt-4.1-mini-2025-04-14',
-        base_url="https://api.openai.com/v1",
-        temperature=0,
-    )
+assistant_runnable = primary_assistant_prompt | llm.bind_tools(
+    primary_assistant_tools + [
+        ToFlightBookingAssistant,
+        ToBookCarRental,
+        ToHotelBookingAssistant,
+        ToBookExcursion,
+    ]
+)
 
-    primary_assistant_prompt = ChatPromptTemplate.from_messages(
-        [
-            (
-                "system",
-                "You are a customer service assistant for Ctrip travel agency."
-                "Your primary responsibility is to search for flight information and company policies to answer customer inquiries."
-                "Be persistent when searching. If the first search yields no results, expand the query."
-                "If the search is unsuccessful, broaden the search scope before giving up."
-                "\n\nCurrent passenger has following information:\n<User>\n{user_info}\n</User>"
-                "\nCurrent time: {time}.",
-            ),
-            ("placeholder", "{messages}"),
-        ]
-    ).partial(time = datetime.now())
-
-    runnable = primary_assistant_prompt | llm.bind_tools(safe_tools + sensitive_tools)
-
-    return CtripAssistant(runnable) # create a instance
+    #return CtripAssistant(runnable) # create an instance
 
 
 
